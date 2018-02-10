@@ -1,71 +1,45 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
-from torchvision import datasets, transforms
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+from torchvision.utils import save_image
 
 
-class CNN(nn.Module):
+class Autoencoder(nn.Module):
     def __init__(self):
-        super(CNN, self).__init__()
-        # first convolutional layer
-        # input: (1, 28, 28) output: (32, 28, 28)
-        self.conv1 = nn.Sequential(
-            nn.Conv2d(
-                in_channels=1,          # number of channels in input
-                out_channels=32,        # number of channels in output(filters number)
-                kernel_size=5,          # the size of filter
-                stride=1,               # the size of step
-                padding=2,              # the size of area to fill zero around the output
-            ),
-            nn.ReLU(),                  # activation
-        )
-        # first max pooling layer
-        # window size [2, 2]
-        self.maxpool1 = nn.MaxPool2d(kernel_size=2)
-
-        # second convolutional layer
-        # input: (32, 14, 14) output: (64, 14, 14)
-        self.conv2 = nn.Sequential(
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1),
+        super(Autoencoder, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(28*28, 256),
             nn.ReLU(),
+            nn.Linear(256, 64),
         )
-        # second max pooling layer
-        # window size [2, 2]
-        self.maxpool2 = nn.MaxPool2d(kernel_size=2)
-
-        # fully connected network
-        # input: (64, 7, 7) output: 10 classes
-        self.fc = nn.Sequential(
-            nn.Linear(in_features=64 * 7 * 7, out_features=300),
+        self.decoder = nn.Sequential(
+            nn.Linear(64, 256),
             nn.ReLU(),
-            nn.Linear(300, 10),
-            nn.LogSoftmax(dim=1)
+            nn.Linear(256, 28*28),
+            nn.Sigmoid()
         )
 
     def __call__(self, *args, **kwargs):
-        return super(CNN, self).__call__(*args, **kwargs)
+        return super(Autoencoder, self).__call__(*args, **kwargs)
 
     def forward(self, x):
-        x = self.conv1(x)
-        x = self.maxpool1(x)
-        x = self.conv2(x)
-        x = self.maxpool2(x)
-        output = self.fc(x.view(-1, 64*7*7))
-        return output
+        return self.decoder(self.encoder(x.view(-1, 784)))
 
-model = CNN()
+model = Autoencoder()
 print(model)
 
 #########################################################################
 #                           Parameters Settings                         #
 #########################################################################
-learning_rate = 0.001
+learning_rate = 0.003
 batch_size = 50
-epochs = 1
+epochs = 5
 log_interval = 120
 cuda_enable = True
+test_img = 15
 #########################################################################
 
 cuda_enable = torch.cuda.is_available() and cuda_enable
@@ -92,18 +66,18 @@ def train(epoch):
     model.train()
 
     # training step
-    for batch_idx, (data, target) in enumerate(train_loader):
+    for batch_idx, (data, _) in enumerate(train_loader):
 
         # if cuda is enable, change the compute instances to cuda objects
         if cuda_enable:
-            data, target = data.cuda(), target.cuda()
+            data = data.cuda()
 
         # wraps tensors and can record the operation applied to it
-        data, target = Variable(data), Variable(target)
+        data = Variable(data)
 
         # define the optimizer and loss function
         optimizer = torch.optim.Adam(params=model.parameters(), lr=learning_rate)
-        loss = nn.CrossEntropyLoss()
+        loss = nn.MSELoss()
 
         # clear the gradient for each training step
         optimizer.zero_grad()
@@ -112,7 +86,7 @@ def train(epoch):
         output = model(data)
 
         # compute loss and process back-propagation(compute gradient)
-        loss = loss(output, target)
+        loss = loss(output, data)
         loss.backward()
 
         # apply the gradients
@@ -131,46 +105,38 @@ def train(epoch):
             )
 
 
-def test():
+def test(epoch):
 
     # set the model to evaluation mode
     model.eval()
 
-    # initialize loss and correct count
+    # initialize the test loss
     test_loss = 0
-    correct = 0
 
-    for data, target in test_loader:
+    for i, (data, _) in enumerate(test_loader):
         if cuda_enable:
-            data, target = data.cuda(), target.cuda()
+            data = data.cuda()
 
-        data, target = Variable(data, volatile=True), Variable(target)
+        data = Variable(data, volatile=True)
         output = model(data)
 
         # sum up the loss
-        test_loss += functional.cross_entropy(output, target, size_average=False).data[0]
+        test_loss += functional.mse_loss(output, data).data[0]
 
-        # get the index of the max log-probability
-        predict = output.data.max(1, keepdim=True)[1]
+        # when constructing autoencoder
+        # the evaluation way is to generate the reconstructed images to compare with origin ones
+        if i == 0:
+            # use min(batch_size, test_img) as the image number in single output
+            n = min(data.size(0), test_img)
+            comparison = torch.cat([data[:n], output.view(batch_size, 1, 28, 28)[:n]])
+            save_image(comparison.data.cpu(), 'results/reconstruction_' + str(epoch) + '.png', nrow=n)
 
-        # counting correct predictions
-        correct += predict.eq(target.data.view_as(predict)).cpu().sum()
-
-    # get the average
     test_loss /= len(test_loader.dataset)
+    print('====> Test set loss: {:.4f}'.format(test_loss))
 
-    print(
-        '\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-            test_loss,
-            correct,
-            len(test_loader.dataset),
-            100. * correct / len(test_loader.dataset)
-        )
-    )
 
 ###################################
 # Running stage
-for e in range(1, epochs + 1):
+for e in range(1, epochs+1):
     train(e)
-
-test()
+    test(e)
