@@ -64,7 +64,7 @@ print(model)
 learning_rate = 0.001
 batch_size = 50
 epochs = 1
-log_interval = 50
+log_interval = 120
 cuda_enable = True
 #########################################################################
 
@@ -120,9 +120,15 @@ def train(epoch):
 
         # print the progress
         if batch_idx % log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.data[0]))
+            print(
+                'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                    epoch,
+                    batch_idx * len(data),
+                    len(train_loader.dataset),
+                    100. * batch_idx / len(train_loader),
+                    loss.data[0]
+                )
+            )
 
 
 def test():
@@ -153,9 +159,14 @@ def test():
     # get the average
     test_loss /= len(test_loader.dataset)
 
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-        test_loss, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
+    print(
+        '\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+            test_loss,
+            correct,
+            len(test_loader.dataset),
+            100. * correct / len(test_loader.dataset)
+        )
+    )
 
 for e in range(1, epochs + 1):
     train(e)
